@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- width=device-width makes the page fit the iPhone screen instead of
+       being shown as a tiny zoomed-out desktop page. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Lets you "Add to Home Screen" on iPhone and open it like an app. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Lamp">
+  <meta name="theme-color" content="#111418">
+  <title>Wemo Controller</title>
+  <style>
+    :root {
+      --bg: #111418; --card: #1b2027; --text: #e8ecf1; --muted: #8a94a3;
+      --on: #22c55e; --off: #ef4444; --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0; min-height: 100dvh; background: var(--bg); color: var(--text);
+      font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 24px;
+      /* env(safe-area-inset-*) keeps content clear of the iPhone notch/home bar */
+      padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    }
+    h1 { margin: 0; font-size: 1.4rem; font-weight: 600; }
+    .status {
+      width: 100%; max-width: 420px; background: var(--card);
+      border-radius: 20px; padding: 28px 20px; text-align: center;
+    }
+    .dot {
+      width: 18px; height: 18px; border-radius: 50%; display: inline-block;
+      background: var(--muted); margin-right: 10px; vertical-align: middle;
+    }
+    .status[data-state="on"]      .dot { background: var(--on);   box-shadow: 0 0 14px var(--on); }
+    .status[data-state="off"]     .dot { background: var(--off); }
+    .status[data-state="offline"] .dot { background: var(--warn); }
+    .state { font-size: 2.4rem; font-weight: 700; vertical-align: middle; }
+    .sub { margin-top: 8px; color: var(--muted); font-size: .9rem; }
+    .buttons { width: 100%; max-width: 420px; display: grid; gap: 16px; }
+    button {
+      font: inherit; font-size: 1.8rem; font-weight: 700; color: #fff;
+      border: 0; border-radius: 20px; min-height: 96px; width: 100%;
+      cursor: pointer; touch-action: manipulation;
+    }
+    button:active { transform: scale(.98); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    #on  { background: var(--on); }
+    #off { background: var(--off); }
+  </style>
+</head>
+<body>
+  <h1 id="title">Wemo Controller</h1>
+
+  <div class="status" id="status" data-state="unknown">
+    <span class="dot"></span><span class="state" id="state">...</span>
+    <div class="sub" id="sub">Connecting</div>
+  </div>
+
+  <div class="buttons">
+    <button id="on"  type="button">ON</button>
+    <button id="off" type="button">OFF</button>
+  </div>
+
+<script>
+const statusEl = document.getElementById("status");
+const stateEl  = document.getElementById("state");
+const subEl    = document.getElementById("sub");
+const titleEl  = document.getElementById("title");
+const buttons  = [document.getElementById("on"), document.getElementById("off")];
+
+// Redraw the page from a status object returned by the server.
+function render(s) {
+  if (!s.online) {
+    statusEl.dataset.state = "offline";
+    stateEl.textContent = "OFFLINE";
+    subEl.textContent = "Can't reach the plug. Retrying...";
+  } else {
+    statusEl.dataset.state = s.on ? "on" : "off";
+    stateEl.textContent = s.on ? "ON" : "OFF";
+    subEl.textContent = "Updated " + new Date().toLocaleTimeString();
+    if (s.name) titleEl.textContent = s.name;
+  }
+}
+
+// Wrap fetch so network failures (e.g. the server itself is down) look like
+// "offline" instead of throwing errors at the user.
+async function call(path, method) {
+  try {
+    const r = await fetch(path, { method });
+    return await r.json();
+  } catch (e) {
+    return { online: false };
+  }
+}
+
+async function refresh() {
+  render(await call("/api/status", "GET"));
+}
+
+async function press(path) {
+  buttons.forEach(b => b.disabled = true);   // stop double taps
+  render(await call(path, "POST"));
+  buttons.forEach(b => b.disabled = false);
+}
+
+document.getElementById("on").addEventListener("click",  () => press("/api/on"));
+document.getElementById("off").addEventListener("click", () => press("/api/off"));
+
+refresh();
+setInterval(refresh, 3000);                   // live status: poll every 3 s
+// Refresh immediately when the iPhone returns to this tab/app.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>
