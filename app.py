@@ -117,4 +117,8 @@ def api_off():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
-    app.run(host=BIND_HOST, port=BIND_PORT)
+    # debug=False is deliberate and hard-coded. Flask's debug mode runs an
+    # interactive console that lets anyone who can reach the page execute
+    # Python code on this laptop. It must never be on when the app is
+    # reachable from anywhere but this machine, so there is no setting for it.
+    app.run(host=BIND_HOST, port=BIND_PORT, debug=False)
