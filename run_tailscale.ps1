@@ -36,6 +36,18 @@ if (-not $ip) {
     exit 1
 }
 
+# Read local settings (WEMO_HOST etc.) from the git-ignored config file.
+$config = Join-Path $projectDir "config.local.env"
+if (-not (Test-Path $config)) {
+    Write-Log "Missing config.local.env - copy config.example.env and set WEMO_HOST."
+    exit 1
+}
+foreach ($line in Get-Content $config) {
+    if ($line -match '^\s*([^#=\s][^=]*)=(.*)$') {
+        Set-Item -Path "env:$($Matches[1].Trim())" -Value $Matches[2].Trim()
+    }
+}
+
 $env:BIND_HOST = $ip
 Write-Log "Starting Wemo Controller on http://${ip}:5000 (Tailscale only)"
 Write-Host "Wemo Controller listening on http://${ip}:5000 (Tailscale only)"

@@ -59,7 +59,18 @@ can't join 5 GHz networks or WPA3.
 .\.venv\Scripts\python.exe app.py        # http://127.0.0.1:5000, this laptop only
 ```
 
-Settings are environment variables: `WEMO_HOST` (plug IP), `BIND_HOST`, `BIND_PORT`.
+## Configuration
+
+Your plug's IP is kept out of the repo. Create a local, git-ignored config file:
+
+```powershell
+Copy-Item config.example.env config.local.env
+notepad config.local.env      # set WEMO_HOST to your plug's IP
+```
+
+`app.py` and `run_tailscale.ps1` (so the boot task too) both read
+`config.local.env`. Real environment variables override it. Settings:
+`WEMO_HOST` (required, plug IP), `BIND_HOST`, `BIND_PORT`.
 The app has no login, so it binds to localhost by default.
 
 **Remote access:** `run_tailscale.ps1` binds the app to the laptop's Tailscale

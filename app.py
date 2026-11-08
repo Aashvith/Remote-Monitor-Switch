@@ -19,10 +19,29 @@ import pywemo
 from flask import Flask, jsonify, render_template
 
 # --- Configuration ---------------------------------------------------------
-# Settings come from environment variables so nothing is hard-coded, with
-# sensible defaults for this project. To override in PowerShell:
-#     $env:WEMO_HOST = "192.168.1.50"; python app.py
-WEMO_HOST = os.environ.get("WEMO_HOST", "192.168.1.xxx")
+# Settings come from environment variables, or from config.local.env (a
+# git-ignored file next to this script; copy config.example.env to create it).
+# Real environment variables win over the file.
+def _load_local_config():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.local.env")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_local_config()
+
+WEMO_HOST = os.environ.get("WEMO_HOST")
+if not WEMO_HOST:
+    raise SystemExit(
+        "WEMO_HOST is not set. Copy config.example.env to config.local.env "
+        "and put your plug's IP address in it."
+    )
 
 # 127.0.0.1 means "only this laptop can connect". The app has no login, so we
 # don't expose it to the rest of the network yet. When we add Tailscale we
