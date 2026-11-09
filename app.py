@@ -16,6 +16,9 @@ import os
 import threading
 
 import pywemo
+import urllib3
+from pywemo.ouimeaux_device import probe_wemo
+from pywemo.ouimeaux_device.api.service import Action
 from flask import Flask, jsonify, render_template
 
 # --- Configuration ---------------------------------------------------------
@@ -59,6 +62,12 @@ log = logging.getLogger("wemo-web")
 # it away and reconnect on the next request. That is what makes the app
 # self-healing.
 _device = None
+# pywemo's defaults (6 retries with backoff, 3 rediscovery rounds) can block
+# one call for over a minute when the plug is unreachable. That would hold our
+# lock and freeze every request, so fail fast instead; the page retries itself.
+Action.max_rediscovery_attempts = 1
+_FAST_RETRY = urllib3.Retry(total=1, backoff_factor=0.2, allowed_methods=["GET", "POST"])
+_FAST_TIMEOUT = 2.0
 # Flask can handle several requests at once in different threads, and the
 # plug handles one request at a time, so a lock keeps our calls in line.
 _lock = threading.Lock()
@@ -68,12 +77,16 @@ def get_device():
     """Return a connected pywemo device, connecting first if needed."""
     global _device
     if _device is None:
-        url = pywemo.setup_url_for_address(WEMO_HOST)
-        if url is None:
+        # Probe with a short timeout (pywemo's default is 10 s per port).
+        port = probe_wemo(WEMO_HOST, probe_timeout=_FAST_TIMEOUT)
+        if port is None:
             raise ConnectionError(f"No Wemo answering at {WEMO_HOST}")
+        url = f"http://{WEMO_HOST}:{port}/setup.xml"
         dev = pywemo.device_from_description(url)
         if dev is None:
             raise ConnectionError(f"Could not read device description from {url}")
+        dev.session.retries = _FAST_RETRY
+        dev.session.timeout = _FAST_TIMEOUT
         _device = dev
         log.info("Connected to %s at %s", dev.name, WEMO_HOST)
     return _device

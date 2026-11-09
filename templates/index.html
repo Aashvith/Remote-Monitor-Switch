@@ -70,45 +70,75 @@ const subEl    = document.getElementById("sub");
 const titleEl  = document.getElementById("title");
 const buttons  = [document.getElementById("on"), document.getElementById("off")];
 
-// Redraw the page from a status object returned by the server.
+let failures = 0;          // consecutive failed checks
+let lastGood = null;       // time of last successful contact with the plug
+
+// Redraw the page. s.server === false means the web server itself is
+// unreachable (e.g. phone lost Wi-Fi/Tailscale); otherwise it is the plug.
 function render(s) {
   if (!s.online) {
+    failures++;
     statusEl.dataset.state = "offline";
     stateEl.textContent = "OFFLINE";
-    subEl.textContent = "Can't reach the plug. Retrying...";
+    const what = s.server === false
+      ? "Can't reach the server (check this device's Wi-Fi/Tailscale)."
+      : "Can't reach the plug (power or Wi-Fi problem).";
+    const since = lastGood ? " Last seen " + lastGood.toLocaleTimeString() + "." : "";
+    subEl.textContent = what + since + " Retrying automatically...";
   } else {
+    failures = 0;
+    lastGood = new Date();
     statusEl.dataset.state = s.on ? "on" : "off";
     stateEl.textContent = s.on ? "ON" : "OFF";
-    subEl.textContent = "Updated " + new Date().toLocaleTimeString();
+    subEl.textContent = "Updated " + lastGood.toLocaleTimeString();
   }
 }
 
-// Wrap fetch so network failures (e.g. the server itself is down) look like
-// "offline" instead of throwing errors at the user.
+// Wrap fetch so failures show as "offline" instead of throwing. A timeout
+// stops a hung request from freezing the page.
 async function call(path, method) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
   try {
-    const r = await fetch(path, { method });
-    return await r.json();
+    const r = await fetch(path, { method, signal: ctl.signal, cache: "no-store" });
+    const data = await r.json();
+    return (data && typeof data.online === "boolean") ? data : { online: false };
   } catch (e) {
-    return { online: false };
+    return { online: false, server: false };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
+// One check at a time: the next poll is only scheduled after the previous
+// one finishes, so slow/failed requests can't pile up or arrive out of order.
+let busy = false, timer = null;
 async function refresh() {
-  render(await call("/api/status", "GET"));
+  if (busy) return;
+  busy = true;
+  clearTimeout(timer);
+  try { render(await call("/api/status", "GET")); }
+  finally {
+    busy = false;
+    // Poll every 3 s; back off to 10 s while offline to go easy on the plug.
+    timer = setTimeout(refresh, failures > 2 ? 10000 : 3000);
+  }
 }
 
 async function press(path) {
   buttons.forEach(b => b.disabled = true);   // stop double taps
-  render(await call(path, "POST"));
-  buttons.forEach(b => b.disabled = false);
+  try { render(await call(path, "POST")); }
+  finally {
+    buttons.forEach(b => b.disabled = false);
+    clearTimeout(timer);
+    timer = setTimeout(refresh, 3000);
+  }
 }
 
 document.getElementById("on").addEventListener("click",  () => press("/api/on"));
 document.getElementById("off").addEventListener("click", () => press("/api/off"));
 
 refresh();
-setInterval(refresh, 3000);                   // live status: poll every 3 s
 // Refresh immediately when the iPhone returns to this tab/app.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 </script>
