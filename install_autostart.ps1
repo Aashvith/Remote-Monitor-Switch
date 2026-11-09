@@ -16,8 +16,18 @@ $action = New-ScheduledTaskAction -Execute "powershell.exe" `
 # WHEN: at Windows startup (not at login), plus a 30 s delay so Windows and
 # Tailscale's service can finish starting. The launcher also waits for the
 # Tailscale address, so this is belt and braces.
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$trigger.Delay = "PT30S"
+$boot = New-ScheduledTaskTrigger -AtStartup
+$boot.Delay = "PT30S"
+
+# WATCHDOG: also try to start the task every 5 minutes. Because the settings
+# below use -MultipleInstances IgnoreNew, a run that finds the app already
+# running is simply skipped, so there is never a second copy. If the app is
+# down (crashed, launcher exited, missed start), this brings it back within
+# 5 minutes.
+$watchdog = New-ScheduledTaskTrigger -Once -At (Get-Date).Date `
+    -RepetitionInterval (New-TimeSpan -Minutes 5) `
+    -RepetitionDuration (New-TimeSpan -Days 3650)
+$trigger = @($boot, $watchdog)
 
 # WHO: your own account, in "S4U" mode = "run whether the user is logged on or
 # not", WITHOUT storing your password. It runs with your normal (non-admin)

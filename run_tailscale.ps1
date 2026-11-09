@@ -5,7 +5,7 @@
 # your tailnet can connect. The address is looked up with `tailscale ip -4`.
 #
 # At Windows boot, Tailscale may not have its address yet when this script
-# starts, so we wait (up to 5 minutes) instead of failing straight away.
+# starts, so we wait (forever, logging once a minute) instead of failing.
 # Logs go to the logs\ folder (ignored by git) because a task running at boot
 # has no visible window: wemo-app.log = this launcher, app.out.log/app.err.log = Flask.
 
@@ -24,16 +24,21 @@ if ((Test-Path $log) -and (Get-Item $log).Length -gt 1MB) { Move-Item $log "$log
 # Tailscale's address range is 100.64.0.0/10 (100.64.x.x - 100.127.x.x).
 $pattern = '^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+$'
 $ip = $null
-for ($i = 0; $i -lt 60 -and -not $ip; $i++) {
+$waitStart = Get-Date
+$lastLogged = [datetime]::MinValue
+while (-not $ip) {
     try {
         $candidate = (& $tailscale ip -4 2>$null | Select-Object -First 1)
         if ($candidate -and $candidate.Trim() -match $pattern) { $ip = $candidate.Trim() }
     } catch { }
-    if (-not $ip) { Start-Sleep -Seconds 5 }
-}
-if (-not $ip) {
-    Write-Log "Tailscale never provided an address; giving up (the scheduled task will retry)."
-    exit 1
+    if (-not $ip) {
+        # Never give up: log a "still waiting" line once a minute, pause, retry.
+        if (((Get-Date) - $lastLogged).TotalSeconds -ge 60) {
+            Write-Log ("Still waiting for a Tailscale address (100.64.0.0/10), {0} min so far..." -f [int]((Get-Date) - $waitStart).TotalMinutes)
+            $lastLogged = Get-Date
+        }
+        Start-Sleep -Seconds 5
+    }
 }
 
 # Read local settings (WEMO_HOST etc.) from the git-ignored config file.
@@ -45,6 +50,22 @@ if (-not (Test-Path $config)) {
 foreach ($line in Get-Content $config) {
     if ($line -match '^\s*([^#=\s][^=]*)=(.*)$') {
         Set-Item -Path "env:$($Matches[1].Trim())" -Value $Matches[2].Trim()
+    }
+}
+
+# Clean up any stale copy still holding port 5000 (e.g. one started by hand).
+# Only python.exe processes are touched; the venv launcher parent is stopped too.
+$stale = Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue
+foreach ($c in $stale) {
+    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($c.OwningProcess)" -ErrorAction SilentlyContinue
+    if ($p -and $p.Name -eq 'python.exe') {
+        $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.ParentProcessId)" -ErrorAction SilentlyContinue
+        Write-Log "Stopping stale app copy on port 5000 (PID $($p.ProcessId))"
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+        if ($parent -and $parent.Name -eq 'python.exe') { Stop-Process -Id $parent.ProcessId -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds 2
+    } elseif ($p) {
+        Write-Log "Port 5000 is held by $($p.Name) (PID $($p.ProcessId)), not python; leaving it alone."
     }
 }
 

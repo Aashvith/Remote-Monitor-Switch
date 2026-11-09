@@ -7,9 +7,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <!-- Lets you "Add to Home Screen" on iPhone and open it like an app. -->
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Lamp">
+  <meta name="apple-mobile-web-app-title" content="Monitor">
   <meta name="theme-color" content="#111418">
-  <title>Wemo Controller</title>
+  <title>Monitor</title>
   <style>
     :root {
       --bg: #111418; --card: #1b2027; --text: #e8ecf1; --muted: #8a94a3;
@@ -51,7 +51,7 @@
   </style>
 </head>
 <body>
-  <h1 id="title">Wemo Controller</h1>
+  <h1 id="title">Monitor</h1>
 
   <div class="status" id="status" data-state="unknown">
     <span class="dot"></span><span class="state" id="state">...</span>
@@ -80,7 +80,6 @@ function render(s) {
     statusEl.dataset.state = s.on ? "on" : "off";
     stateEl.textContent = s.on ? "ON" : "OFF";
     subEl.textContent = "Updated " + new Date().toLocaleTimeString();
-    if (s.name) titleEl.textContent = s.name;
   }
 }
 
